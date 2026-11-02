@@ -1,0 +1,29 @@
+{
+  "name": "@diogenes/elizaos-plugin",
+  "version": "1.0.0",
+  "description": "ElizaOS plugin for Diogenes edge microservices, Solana token risk audits, and x402 micropayments",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test"
+  },
+  "keywords": [
+    "elizaos",
+    "solana",
+    "ai-agent",
+    "x402",
+    "mcp",
+    "microservices",
+    "guardrails"
+  ],
+  "author": "Diogenes Gateway",
+  "license": "MIT",
+  "peerDependencies": {
+    "@elizaos/core": ">=0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
