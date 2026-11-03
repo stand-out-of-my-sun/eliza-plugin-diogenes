@@ -10,7 +10,7 @@ export interface DiogenesPluginConfig {
   solanaKeypairBase58?: string;
 }
 
-const DEFAULT_GATEWAY_URL = "https://diogenes-micro-gateway.corinth.workers.dev";
+const DEFAULT_GATEWAY_URL = "https://diogenesgateway.com";
 const SOLANA_X402_WALLET = "3vuU9jvaohMG6oPY7NVrUggcSJ4CuhcByxoQk68EC6hj";
 
 export class DiogenesClient {
@@ -52,12 +52,20 @@ export class DiogenesClient {
 
   /**
    * Evaluates SPL token mint address for active freeze authority, mint authority,
-   * honeypot transfer taxes, and binary should_transact verdict.
+   * honeypot transfer taxes, Token-2022 extensions, reason codes, and verified slot.
    */
-  async checkSplTokenRisk(mintAddress: string): Promise<any> {
+  async checkSplTokenRisk(mintAddress: string, riskProfile: string = "allow_regulated_stablecoins"): Promise<any> {
     return this.callEndpoint("/api/v1/crypto/solana-risk", {
       mint_address: mintAddress,
+      risk_profile: riskProfile,
     });
+  }
+
+  /**
+   * Alias for checkSplTokenRisk matching the official ElizaOS Solana tool interface.
+   */
+  async evaluate_solana_token_risk(mintAddress: string, riskProfile: string = "allow_regulated_stablecoins"): Promise<any> {
+    return this.checkSplTokenRisk(mintAddress, riskProfile);
   }
 
   /**
@@ -86,12 +94,20 @@ export class DiogenesClient {
  */
 export const diogenesPlugin = {
   name: "diogenes",
-  description: "Diogenes Autonomous Edge Microservices & Solana Security Plugin",
+  description: "Diogenes Autonomous Edge Microservices & Solana Security Plugin: SPL token risk audits, Anchor contract verifier, and agent guardrails",
 
   actions: [
     {
-      name: "CHECK_SPL_TOKEN_RISK",
-      description: "Inspect a Solana SPL token mint address for freeze authority, honeypot tax, and security risks before trading",
+      name: "EVALUATE_SOLANA_TOKEN_RISK",
+      similes: [
+        "CHECK_SPL_TOKEN_RISK",
+        "INSPECT_SOLANA_TOKEN",
+        "AUDIT_SPL_TOKEN",
+        "CHECK_FREEZE_AUTHORITY",
+        "EVALUATE_TOKEN_RISK",
+        "SOLANA_HONEYPOT_CHECK"
+      ],
+      description: "Inspect a Solana SPL token mint address for freeze authority, mint authority, honeypot tax, and security risks before trading",
       examples: [
         [
           {
@@ -102,7 +118,20 @@ export const diogenesPlugin = {
             user: "agent",
             content: {
               text: "I am auditing the Solana SPL token mint with Diogenes Risk Oracle...",
-              action: "CHECK_SPL_TOKEN_RISK",
+              action: "EVALUATE_SOLANA_TOKEN_RISK",
+            },
+          },
+        ],
+        [
+          {
+            user: "user",
+            content: { text: "Audit token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+          },
+          {
+            user: "agent",
+            content: {
+              text: "Evaluating Solana SPL token risk with Diogenes...",
+              action: "EVALUATE_SOLANA_TOKEN_RISK",
             },
           },
         ],
@@ -119,8 +148,12 @@ export const diogenesPlugin = {
 
         try {
           const result = await client.checkSplTokenRisk(mint);
+          const p = result.preview || {};
+          const reasonStr = Array.isArray(p.reason_codes) && p.reason_codes.length > 0 ? p.reason_codes.join(", ") : "CLEAN";
+          const standardStr = p.token_standard || "spl-token";
+          const slotStr = p.slot ? ` | Slot: ${p.slot}` : "";
           callback?.({
-            text: `Token Audit for ${mint}:\nVerdict: ${result.preview?.should_transact ? "SAFE" : "CAUTION"}\nRisk Score: ${result.preview?.risk_score ?? "Low"}\nFreeze Authority: ${result.preview?.has_freeze_authority ? "ACTIVE (Risk)" : "Disabled (Safe)"}`,
+            text: `Token Audit for ${mint}:\nVerdict: ${p.should_transact ? "SAFE" : "CAUTION"}\nRisk Score: ${p.risk_score ?? "Low"}\nStandard: ${standardStr}${slotStr}\nFreeze Authority: ${p.has_freeze_authority ? "ACTIVE" : "Disabled"}\nReason Codes: ${reasonStr}`,
             content: result,
           });
           return true;
@@ -132,7 +165,12 @@ export const diogenesPlugin = {
     },
     {
       name: "AUDIT_SMART_CONTRACT",
-      description: "Audit Solana Anchor or EVM smart contract code for honeypot logic and reentrancy bugs",
+      similes: [
+        "AUDIT_ANCHOR_PROGRAM",
+        "AUDIT_SOLANA_CONTRACT",
+        "VERIFY_SMART_CONTRACT"
+      ],
+      description: "Audit Solana Anchor or EVM smart contract code for honeypot logic, reentrancy bugs, and missing signer checks",
       examples: [
         [
           {
@@ -168,7 +206,27 @@ export const diogenesPlugin = {
     },
     {
       name: "ENFORCE_GUARDRAIL",
+      similes: [
+        "VERIFY_GUARDRAIL",
+        "PRE_EXECUTION_SECURITY_CHECK",
+        "CHECK_PROMPT_INJECTION"
+      ],
       description: "Pre-execution security gate to prevent prompt injection and destructive shell commands",
+      examples: [
+        [
+          {
+            user: "user",
+            content: { text: "Verify this action input against security guardrails." },
+          },
+          {
+            user: "agent",
+            content: {
+              text: "Evaluating command against Diogenes Security Guardrail...",
+              action: "ENFORCE_GUARDRAIL",
+            },
+          },
+        ],
+      ],
       validate: async () => true,
       handler: async (runtime: any, message: any, state: any, options: any, callback: any) => {
         const client = new DiogenesClient({ demoMode: true });
@@ -181,4 +239,5 @@ export const diogenesPlugin = {
   ],
 };
 
+export const plugin = diogenesPlugin;
 export default diogenesPlugin;

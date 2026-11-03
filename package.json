@@ -1,22 +1,26 @@
 {
-  "name": "@diogenes/elizaos-plugin",
+  "name": "@diogenesgateway/plugin-diogenes",
   "version": "1.0.0",
-  "description": "ElizaOS plugin for Diogenes edge microservices, Solana token risk audits, and x402 micropayments",
+  "description": "ElizaOS plugin for Diogenes edge microservices: real-time Solana SPL token risk audits, Anchor contract verification, pre-execution guardrails, and x402 micropayments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "node --test"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "elizaos",
+    "eliza",
+    "plugin",
     "solana",
     "ai-agent",
     "x402",
     "mcp",
     "microservices",
-    "guardrails"
+    "guardrails",
+    "spl-token",
+    "audit"
   ],
   "author": "Diogenes Gateway",
   "license": "MIT",
@@ -25,5 +29,15 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stand-out-of-my-sun/eliza-plugin-diogenes.git"
+  },
+  "homepage": "https://diogenesgateway.com",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
 }
