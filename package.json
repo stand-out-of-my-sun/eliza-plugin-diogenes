@@ -1,7 +1,7 @@
 {
   "name": "@diogenesgateway/plugin-diogenes",
-  "version": "1.0.0",
-  "description": "ElizaOS plugin for Diogenes edge microservices: real-time Solana SPL token risk audits, Anchor contract verification, pre-execution guardrails, and x402 micropayments",
+  "version": "1.1.0",
+  "description": "ElizaOS plugin for Diogenes edge microservices: autonomous Solana x402 micropayments, real-time SPL token risk audits, Anchor contract verification, and pre-execution guardrails",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -39,7 +39,12 @@
   "homepage": "https://diogenesgateway.com",
   "files": [
     "dist",
+    "characters",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "dependencies": {
+    "@solana/web3.js": "^3.2.1",
+    "bs58": "^6.0.0"
+  }
 }

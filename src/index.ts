@@ -1,30 +1,89 @@
-/**
- * Diogenes Plugin for ElizaOS
- * Provides autonomous Solana agents with real-time SPL token risk inspection,
- * smart contract honeypot audits, pre-execution safety guardrails, and x402 micropayments.
- */
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  sendAndConfirmTransaction,
+} from "@solana/web3.js";
+import bs58 from "bs58";
 
 export interface DiogenesPluginConfig {
   gatewayUrl?: string;
   demoMode?: boolean;
   solanaKeypairBase58?: string;
+  solanaRpcUrl?: string;
+  sessionKey?: string;
+  maxPaymentLamports?: number; // Safety budget cap per call (default: 500,000 lamports = 0.0005 SOL)
   requestTimeoutMs?: number;
 }
 
 const DEFAULT_GATEWAY_URL = "https://diogenesgateway.com";
-const DEFAULT_TIMEOUT_MS = 10000;
+const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MAX_LAMPORTS = 500000; // 0.0005 SOL
+const DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+const DEFAULT_TREASURY_SOLANA = "5RwSxvj4A2LPLPSQQkiGUdbp7uCfgHd1Ao7V21a6Ahmm";
 
 export class DiogenesClient {
   private gatewayUrl: string;
   private demoMode: boolean;
   private keypairBase58?: string;
+  private solanaRpcUrl: string;
+  private sessionKey?: string;
+  private maxPaymentLamports: number;
   private timeoutMs: number;
 
   constructor(config: DiogenesPluginConfig = {}) {
     this.gatewayUrl = (config.gatewayUrl || DEFAULT_GATEWAY_URL).replace(/\/+$/, "");
-    this.demoMode = config.demoMode ?? true; // Default to demo mode for safety
     this.keypairBase58 = config.solanaKeypairBase58;
+    this.solanaRpcUrl = config.solanaRpcUrl || DEFAULT_SOLANA_RPC;
+    this.sessionKey = config.sessionKey;
+    this.maxPaymentLamports = config.maxPaymentLamports ?? DEFAULT_MAX_LAMPORTS;
     this.timeoutMs = config.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+    // Default to demoMode only if neither a session key nor a funded keypair is provided
+    this.demoMode = config.demoMode ?? !(this.sessionKey || this.keypairBase58);
+  }
+
+  /**
+   * Autonomously signs and broadcasts a micro-transfer on Solana mainnet to satisfy an x402 challenge
+   */
+  async executeAutonomousPayment(recipient: string, amountLamports: number): Promise<string> {
+    if (!this.keypairBase58) {
+      throw new Error("No Solana keypair configured for autonomous payment.");
+    }
+    if (amountLamports > this.maxPaymentLamports) {
+      throw new Error(
+        `Autonomous payment rejected: Requested ${amountLamports} lamports exceeds configured safety cap of ${this.maxPaymentLamports} lamports.`
+      );
+    }
+
+    let keypair: Keypair;
+    try {
+      const secretKey = bs58.decode(this.keypairBase58.trim());
+      keypair = await Keypair.fromSecretKey(secretKey);
+    } catch (e: any) {
+      throw new Error(`Invalid SOLANA_KEYPAIR_BASE58 private key format: ${e.message}`);
+    }
+
+    const connection = new Connection(this.solanaRpcUrl, "confirmed");
+    const recipientPubkey = new PublicKey(recipient || DEFAULT_TREASURY_SOLANA);
+
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: keypair.publicKey,
+        toPubkey: recipientPubkey,
+        lamports: BigInt(amountLamports),
+      })
+    );
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = keypair.publicKey;
+
+    return await sendAndConfirmTransaction(connection, tx, [keypair], {
+      commitment: "confirmed",
+      skipPreflight: false,
+    });
   }
 
   async callEndpoint(endpoint: string, payload: Record<string, unknown>): Promise<any> {
@@ -35,8 +94,13 @@ export class DiogenesClient {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "User-Agent": "ElizaOS-DiogenesPlugin/2.0",
+      "User-Agent": "ElizaOS-DiogenesPlugin/2.1",
     };
+
+    if (this.sessionKey) {
+      headers["Authorization"] = `Bearer ${this.sessionKey}`;
+      headers["X-Diogenes-Key"] = this.sessionKey;
+    }
 
     let res: Response;
     try {
@@ -53,11 +117,43 @@ export class DiogenesClient {
       throw new Error(`Network error calling Diogenes Gateway: ${err.message}`);
     }
 
+    // Handle 402 Payment Required
     if (res.status === 402) {
+      const challenge = await res.json().catch(() => ({}));
+
+      // If agent has a Solana wallet and is not in demo mode, execute autonomous micro-payment
       if (!this.demoMode && this.keypairBase58) {
-        const challenge = await res.json().catch(() => ({}));
-        throw new Error(`Payment Required: ${JSON.stringify(challenge)}`);
+        const solanaChallenge = challenge?.rail_options?.solana_x402;
+        const recipient = solanaChallenge?.recipient || DEFAULT_TREASURY_SOLANA;
+        const requiredLamports = Number(solanaChallenge?.amount_lamports || 50000);
+
+        const txSignature = await this.executeAutonomousPayment(recipient, requiredLamports);
+
+        // Retry request with Solana payment proof headers
+        const retryHeaders: Record<string, string> = {
+          ...headers,
+          "X-Payment-Signature": txSignature,
+          "PAYMENT-SIGNATURE": txSignature,
+          "Authorization": `x402 ${txSignature}`,
+        };
+
+        const targetUrl = url.replace(/[?&]demo=true/, "");
+        const retryRes = await fetch(targetUrl, {
+          method: "POST",
+          headers: retryHeaders,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+
+        if (!retryRes.ok) {
+          const errText = await retryRes.text().catch(() => "");
+          throw new Error(`Diogenes Gateway returned HTTP ${retryRes.status} after payment: ${errText.slice(0, 300)}`);
+        }
+
+        return await retryRes.json();
       }
+
+      throw new Error(`Payment Required: ${JSON.stringify(challenge)}`);
     }
 
     if (!res.ok) {
@@ -105,6 +201,23 @@ export function getClientFromRuntime(runtime?: any): DiogenesClient {
     process.env.DIOGENES_GATEWAY_URL ||
     DEFAULT_GATEWAY_URL;
 
+  const sessionKey =
+    runtime?.getSetting?.("DIOGENES_SESSION_KEY") ||
+    runtime?.getSetting?.("DIOGENES_API_KEY") ||
+    process.env.DIOGENES_SESSION_KEY ||
+    process.env.DIOGENES_API_KEY;
+
+  const solanaKeypairBase58 =
+    runtime?.getSetting?.("SOLANA_KEYPAIR_BASE58") ||
+    runtime?.getSetting?.("SOLANA_PRIVATE_KEY") ||
+    process.env.SOLANA_KEYPAIR_BASE58 ||
+    process.env.SOLANA_PRIVATE_KEY;
+
+  const solanaRpcUrl =
+    runtime?.getSetting?.("SOLANA_RPC_URL") ||
+    process.env.SOLANA_RPC_URL ||
+    DEFAULT_SOLANA_RPC;
+
   const demoSetting =
     runtime?.getSetting?.("DIOGENES_DEMO_MODE") ??
     process.env.DIOGENES_DEMO_MODE;
@@ -112,13 +225,9 @@ export function getClientFromRuntime(runtime?: any): DiogenesClient {
   const demoMode =
     demoSetting !== undefined
       ? String(demoSetting).toLowerCase() !== "false"
-      : true;
+      : !(sessionKey || solanaKeypairBase58);
 
-  const solanaKeypairBase58 =
-    runtime?.getSetting?.("SOLANA_KEYPAIR_BASE58") ||
-    process.env.SOLANA_KEYPAIR_BASE58;
-
-  return new DiogenesClient({ gatewayUrl, demoMode, solanaKeypairBase58 });
+  return new DiogenesClient({ gatewayUrl, demoMode, solanaKeypairBase58, solanaRpcUrl, sessionKey });
 }
 
 /**
