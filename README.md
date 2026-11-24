@@ -68,29 +68,26 @@ Pre-execution security barrier verifying that agent commands and prompts are fre
 
 ---
 
-## 💳 Autonomous Payments & Configuration
+## ⚡ Fast-Path Execution (<0.1ms) with Prepaid Keys
 
-The plugin supports three operational payment modes:
-
-1. **Autonomous Solana x402 Micropayments (Recommended for Live Agents)**:
-   Provide `SOLANA_KEYPAIR_BASE58` in settings or environment. When Diogenes Gateway returns an HTTP 402 challenge with rail options, the plugin autonomously transfers lamports (~0.00005 SOL / 50,000 lamports) on Solana mainnet and retries with the on-chain signature proof header.
-   - `SOLANA_KEYPAIR_BASE58`: Base58 private key of the agent's funded Solana wallet.
-   - `SOLANA_RPC_URL`: Optional custom RPC endpoint (defaults to Solana Mainnet Beta).
-
-2. **Prepaid Session Key**:
-   - `DIOGENES_SESSION_KEY`: Prepaid session key (`dg_sec_...`) obtained via deposit or grant.
-
-3. **Zero-Fee Demo Mode**:
-   Default fallback when no credentials are provided (`demoMode: true`), allowing testing without an active wallet.
-
-### Pre-Configured Character Template
-
-A turnkey ElizaOS character template is bundled in [`characters/diogenes-sentinel.character.json`](./characters/diogenes-sentinel.character.json).
+Avoid waiting for on-chain block confirmations on every tool call by providing a prepaid session key:
+```typescript
+export const character = {
+  name: "SolanaSecurityAgent",
+  plugins: [diogenesPlugin],
+  settings: {
+    secrets: {
+      DIOGENES_SESSION_KEY: "dg_sec_...",
+    },
+  },
+};
+```
+Top up your key instantly using **Card, Apple Pay, or Crypto** (\$5 Starter, \$20 Builder, \$100 Fleet) at [https://diogenesgateway.com/#prepay-checkout-widget](https://diogenesgateway.com#prepay-checkout-widget).
 
 ---
 
 ## 🌐 Endpoints & Edge Infrastructure
 - **Live Gateway**: [https://diogenesgateway.com](https://diogenesgateway.com)
+- **Instant Prepay Widget**: [https://diogenesgateway.com/#prepay-checkout-widget](https://diogenesgateway.com#prepay-checkout-widget)
 - **MCP Catalog**: [https://diogenesgateway.com/.well-known/mcp.json](https://diogenesgateway.com/.well-known/mcp.json)
 - **Solana x402 Treasury**: `5RwSxvj4A2LPLPSQQkiGUdbp7uCfgHd1Ao7V21a6Ahmm`
-
